@@ -1,0 +1,41 @@
+# Dependencies
+node_modules/
+agents_web_tui/node_modules/
+
+# Build outputs
+dist/
+
+agents_web_tui/dist/
+agents_web_tui/build/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Go
+agents_manager/agents_manager
+agents_manager/web/
+*.test
+*.out
+vendor/
+
+# TypeScript
+*.tsbuildinfo
+agents_web_tui/tsconfig.tsbuildinfo
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Env files
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log

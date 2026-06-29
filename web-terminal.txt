@@ -1,0 +1,75 @@
+[term-ws] stream text len=50 preview="switched to workspace oche (/opt/apps/agents/oche)"
+index-CRx5X-_N.js:77 [term-ws] stream text len=63 preview="switched to agent opencode (/home/kenny/.opencode/bin/openco"
+index-CRx5X-_N.js:77 [term-ws] stream text len=51 preview="starting REPL for opencode in /opt/apps/agents/oche"
+index-CRx5X-_N.js:40 [agent-ws] opening ws for pid=28860
+index-CRx5X-_N.js:40 [agent-ws] opened pid=28860
+index-CRx5X-_N.js:40 [agent-ws] message pid=28860 raw="{\"text\":\"\\u001b[?2031h\\u001b]10;?\\u0007\\u001b]11;?\\u0007\\u001b[\\u003e0q\\u001b[?25l\\u001b[s\\u001b[6n\\u001b
+index-CRx5X-_N.js:40 [agent-ws] text pid=28860 len=195 preview="\u001b[?2031h\u001b]10;?\u0007\u001b]11;?\u0007\u001b[>0q\u001b[?25l\u001b[s\u001b[6n\u001b[?1016$p\u001b[?2027$p\u001b[?2031$p\u001b[?1004$p\u001b[?2"
+index-CRx5X-_N.js:91 [app] onOutput pid=28860 len=195 preview="\u001b[?2031h\u001b]10;?\u0007\u001b]11;?\u0007\u001b[>0q\u001b[?25l\u001b[s\u001b[6n\u001b[?1016$p\u001b[?2027$p\u001b["
+index-CRx5X-_N.js:88 [buf-effect] pid=28860 writing 1 lines
+index-CRx5X-_N.js:40 [agent-ws] send pid=28860 len=25 preview="\u001b]10;rgb:c9c9/d1d1/d9d9\u001b\\"
+index-CRx5X-_N.js:40 [agent-ws] send pid=28860 len=25 preview="\u001b]11;rgb:0d0d/1111/1717\u001b\\"
+index-CRx5X-_N.js:40 [agent-ws] send pid=28860 len=6 preview="\u001b[1;1R"
+index-CRx5X-_N.js:40 [agent-ws] message pid=28860 raw="{\"text\":\"\\u001b[s\\u001b[?1049h\\u001b[\\u003e4;1m\\u001b[?2027h\\u001b[?2004h\"}"
+index-CRx5X-_N.js:40 [agent-ws] text pid=28860 len=34 preview="\u001b[s\u001b[?1049h\u001b[>4;1m\u001b[?2027h\u001b[?2004h"
+index-CRx5X-_N.js:91 [app] onOutput pid=28860 len=34 preview="\u001b[s\u001b[?1049h\u001b[>4;1m\u001b[?2027h\u001b[?2004h"
+index-CRx5X-_N.js:88 [buf-effect] pid=28860 writing 1 lines
+index-CRx5X-_N.js:40 [agent-ws] message pid=28860 raw="{\"text\":\"\\u001b[?1000h\\u001b[?1002h\\u001b[?1003h\\u001b[?1006h\"}"
+index-CRx5X-_N.js:40 [agent-ws] text pid=28860 len=32 preview="\u001b[?1000h\u001b[?1002h\u001b[?1003h\u001b[?1006h"
+index-CRx5X-_N.js:91 [app] onOutput pid=28860 len=32 preview="\u001b[?1000h\u001b[?1002h\u001b[?1003h\u001b[?1006h"
+index-CRx5X-_N.js:40 [agent-ws] message pid=28860 raw="{\"text\":\"\\u001b[14t\"}"
+index-CRx5X-_N.js:40 [agent-ws] text pid=28860 len=5 preview="\u001b[14t"
+index-CRx5X-_N.js:91 [app] onOutput pid=28860 len=5 preview="\u001b[14t"
+index-CRx5X-_N.js:88 [buf-effect] pid=28860 writing 2 lines
+index-CRx5X-_N.js:40 [agent-ws] message pid=28860 raw="{\"text\":\"\\u001b]4;0;?\\u0007\"}"
+index-CRx5X-_N.js:40 [agent-ws] text pid=28860 len=8 preview="\u001b]4;0;?\u0007"
+index-CRx5X-_N.js:91 [app] onOutput pid=28860 len=8 preview="\u001b]4;0;?\u0007"
+index-CRx5X-_N.js:88 [buf-effect] pid=28860 writing 1 lines
+index-CRx5X-_N.js:40 [agent-ws] message pid=28860 raw="{\"text\":\"\\u001b[?2026h\\u001b[?25l\\u001b[1;1H\\u001b[38;2;255;255;255m\\u001b[48;2;10;10;10m                      
+index-CRx5X-_N.js:40 [agent-ws] text pid=28860 len=2945 preview="\u001b[?2026h\u001b[?25l\u001b[1;1H\u001b[38;2;255;255;255m\u001b[48;2;10;10;10m                         "
+index-CRx5X-_N.js:91 [app] onOutput pid=28860 len=2937 preview="\u001b[?25l\u001b[1;1H\u001b[38;2;255;255;255m\u001b[48;2;10;10;10m             "
+index-CRx5X-_N.js:88 [buf-effect] pid=28860 writing 1 lines
+index-CRx5X-_N.js:40 [agent-ws] message pid=28860 raw="{\"text\":\"\\u001b]0;OpenCode\\u0007\"}"
+index-CRx5X-_N.js:40 [agent-ws] text pid=28860 len=13 preview="\u001b]0;OpenCode\u0007"
+index-CRx5X-_N.js:91 [app] onOutput pid=28860 len=13 preview="\u001b]0;OpenCode\u0007"
+index-CRx5X-_N.js:88 [buf-effect] pid=28860 writing 1 lines
+index-CRx5X-_N.js:40 [agent-ws] message pid=28860 raw="{\"text\":\"\\u001b[?2026h\\u001b[?25l\\u001b[6;22H\\u001b[38;2;128;128;128m\\u001b[48;2;10;10;10m                   \\
+index-CRx5X-_N.js:40 [agent-ws] text pid=28860 len=3272 preview="\u001b[?2026h\u001b[?25l\u001b[6;22H\u001b[38;2;128;128;128m\u001b[48;2;10;10;10m                   \u001b[0m\u001b"
+index-CRx5X-_N.js:91 [app] onOutput pid=28860 len=3264 preview="\u001b[?25l\u001b[6;22H\u001b[38;2;128;128;128m\u001b[48;2;10;10;10m            "
+index-CRx5X-_N.js:88 [buf-effect] pid=28860 writing 1 lines
+index-CRx5X-_N.js:40 [agent-ws] message pid=28860 raw="{\"text\":\"\\u001b[?2026h\\u001b[?25l\\u001b[15;40H\\u001b[38;2;35;35;35m\\u001b[48;2;30;30;30m·\\u001b[0m\\u001b[15;4
+index-CRx5X-_N.js:40 [agent-ws] text pid=28860 len=136 preview="\u001b[?2026h\u001b[?25l\u001b[15;40H\u001b[38;2;35;35;35m\u001b[48;2;30;30;30m·\u001b[0m\u001b[15;42H\u001b[38;2;40;36;"
+index-CRx5X-_N.js:91 [app] onOutput pid=28860 len=128 preview="\u001b[?25l\u001b[15;40H\u001b[38;2;35;35;35m\u001b[48;2;30;30;30m·\u001b[0m\u001b[15;42H\u001b"
+index-CRx5X-_N.js:88 [buf-effect] pid=28860 writing 1 lines
+index-CRx5X-_N.js:40 [agent-ws] message pid=28860 raw="{\"text\":\"\\u001b[?2026h\\u001b[?25l\\u001b[15;40H\\u001b[38;2;44;44;44m\\u001b[48;2;30;30;30m·\\u001b[0m\\u001b[15;4
+index-CRx5X-_N.js:40 [agent-ws] text pid=28860 len=136 preview="\u001b[?2026h\u001b[?25l\u001b[15;40H\u001b[38;2;44;44;44m\u001b[48;2;30;30;30m·\u001b[0m\u001b[15;42H\u001b[38;2;60;49;"
+index-CRx5X-_N.js:91 [app] onOutput pid=28860 len=128 preview="\u001b[?25l\u001b[15;40H\u001b[38;2;44;44;44m\u001b[48;2;30;30;30m·\u001b[0m\u001b[15;42H\u001b"
+index-CRx5X-_N.js:88 [buf-effect] pid=28860 writing 1 lines
+index-CRx5X-_N.js:40 [agent-ws] message pid=28860 raw="{\"text\":\"\\u001b[?2026h\\u001b[?25l\\u001b[15;40H\\u001b[38;2;57;57;57m\\u001b[48;2;30;30;30m·\\u001b[0m\\u001b[15;4
+index-CRx5X-_N.js:40 [agent-ws] text pid=28860 len=136 preview="\u001b[?2026h\u001b[?25l\u001b[15;40H\u001b[38;2;57;57;57m\u001b[48;2;30;30;30m·\u001b[0m\u001b[15;42H\u001b[38;2;89;68;"
+index-CRx5X-_N.js:91 [app] onOutput pid=28860 len=128 preview="\u001b[?25l\u001b[15;40H\u001b[38;2;57;57;57m\u001b[48;2;30;30;30m·\u001b[0m\u001b[15;42H\u001b"
+index-CRx5X-_N.js:88 [buf-effect] pid=28860 writing 1 lines
+index-CRx5X-_N.js:40 [agent-ws] message pid=28860 raw="{\"text\":\"\\u001b[?2026h\\u001b[?25l\\u001b[15;40H\\u001b[38;2;73;73;73m\\u001b[48;2;30;30;30m·\\u001b[0m\\u001b[15;4
+index-CRx5X-_N.js:40 [agent-ws] text pid=28860 len=137 preview="\u001b[?2026h\u001b[?25l\u001b[15;40H\u001b[38;2;73;73;73m\u001b[48;2;30;30;30m·\u001b[0m\u001b[15;42H\u001b[38;2;124;90"
+index-CRx5X-_N.js:91 [app] onOutput pid=28860 len=129 preview="\u001b[?25l\u001b[15;40H\u001b[38;2;73;73;73m\u001b[48;2;30;30;30m·\u001b[0m\u001b[15;42H\u001b"
+index-CRx5X-_N.js:88 [buf-effect] pid=28860 writing 1 lines
+index-CRx5X-_N.js:40 [agent-ws] message pid=28860 raw="{\"text\":\"\\u001b[?2026h\\u001b[?25l\\u001b[15;40H\\u001b[38;2;89;89;89m\\u001b[48;2;30;30;30m·\\u001b[0m\\u001b[15;4
+index-CRx5X-_N.js:40 [agent-ws] text pid=28860 len=138 preview="\u001b[?2026h\u001b[?25l\u001b[15;40H\u001b[38;2;89;89;89m\u001b[48;2;30;30;30m·\u001b[0m\u001b[15;42H\u001b[38;2;159;11"
+index-CRx5X-_N.js:91 [app] onOutput pid=28860 len=130 preview="\u001b[?25l\u001b[15;40H\u001b[38;2;89;89;89m\u001b[48;2;30;30;30m·\u001b[0m\u001b[15;42H\u001b"
+index-CRx5X-_N.js:88 [buf-effect] pid=28860 writing 1 lines
+index-CRx5X-_N.js:40 [agent-ws] message pid=28860 raw="{\"text\":\"\\u001b[?2026h\\u001b[?25l\\u001b[15;40H\\u001b[38;2;104;104;104m\\u001b[48;2;30;30;30m·\\u001b[0m\\u001b[1
+index-CRx5X-_N.js:40 [agent-ws] text pid=28860 len=141 preview="\u001b[?2026h\u001b[?25l\u001b[15;40H\u001b[38;2;104;104;104m\u001b[48;2;30;30;30m·\u001b[0m\u001b[15;42H\u001b[38;2;192"
+index-CRx5X-_N.js:91 [app] onOutput pid=28860 len=133 preview="\u001b[?25l\u001b[15;40H\u001b[38;2;104;104;104m\u001b[48;2;30;30;30m·\u001b[0m\u001b[15;4"
+index-CRx5X-_N.js:88 [buf-effect] pid=28860 writing 1 lines
+index-CRx5X-_N.js:40 [agent-ws] message pid=28860 raw="{\"text\":\"\\u001b[?2026h\\u001b[?25l\\u001b[15;40H\\u001b[38;2;117;117;117m\\u001b[48;2;30;30;30m·\\u001b[0m\\u001b[1
+index-CRx5X-_N.js:40 [agent-ws] text pid=28860 len=141 preview="\u001b[?2026h\u001b[?25l\u001b[15;40H\u001b[38;2;117;117;117m\u001b[48;2;30;30;30m·\u001b[0m\u001b[15;42H\u001b[38;2;221"
+index-CRx5X-_N.js:91 [app] onOutput pid=28860 len=133 preview="\u001b[?25l\u001b[15;40H\u001b[38;2;117;117;117m\u001b[48;2;30;30;30m·\u001b[0m\u001b[15;4"
+index-CRx5X-_N.js:88 [buf-effect] pid=28860 writing 1 lines
+index-CRx5X-_N.js:40 [agent-ws] message pid=28860 raw="{\"text\":\"\\u001b[?2026h\\u001b[?25l\\u001b[15;40H\\u001b[38;2;125;125;125m\\u001b[48;2;30;30;30m·\\u001b[0m\\u001b[1
+index-CRx5X-_N.js:40 [agent-ws] text pid=28860 len=141 preview="\u001b[?2026h\u001b[?25l\u001b[15;40H\u001b[38;2;125;125;125m\u001b[48;2;30;30;30m·\u001b[0m\u001b[15;42H\u001b[38;2;238"
+index-CRx5X-_N.js:91 [app] onOutput pid=28860 len=133 preview="\u001b[?25l\u001b[15;40H\u001b[38;2;125;125;125m\u001b[48;2;30;30;30m·\u001b[0m\u001b[15;4"
+index-CRx5X-_N.js:88 [buf-effect] pid=28860 writing 1 lines
+index-CRx5X-_N.js:40 [agent-ws] message pid=28860 raw="{\"text\":\"\\u001b[?2026h\\u001b[?25l\\u001b[15;40H\\u001b[38;2;128;128;128m\\u001b[48;2;30;30;30m·\\u001b[0m\\u001b[1
+index-CRx5X-_N.js:40 [agent-ws] text pid=28860 len=141 preview="\u001b[?2026h\u001b[?25l\u001b[15;40H\u001b[38;2;128;128;128m\u001b[48;2;30;30;30m·\u001b[0m\u001b[15;42H\u001b[38;2;245"
+index-CRx5X-_N.js:91 [app] onOutput pid=28860 len=133 preview="\u001b[?25l\u001b[15;40H\u001b[38;2;128;128;128m\u001b[48;2;30;30;30m·\u001b[0m\u001b[15;4"
+index-CRx5X-_N.js:88 [buf-effect] pid=28860 writing 1 lines
