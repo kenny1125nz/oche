@@ -19,18 +19,20 @@
 | 1.4 | Kill & Reap (SIGTERM→SIGKILL) | ✅ | 5s grace period, PTY cleanup |
 | 1.5 | FIFO queue | ✅ | Notifies client of position when pool full |
 | 1.6 | Test harness | ✅ | 3 test agent scripts (echo, timed, linger) + comprehensive tests |
+| 1.7 | Client connection liveness | ❌ | **Not implemented** — detect dead clients (closed browser, broken connection) and clean up server-side resources |
 
 ## Phase 2: Core — Session & Shell Commands
 
 | # | Feature | Status | Notes |
 |---|---------|--------|-------|
-| 2.1 | SessionStore | ⚠️ | In-memory only — **BoltDB persistence not implemented** |
+| 2.1 | SessionStore | ✅ | In-memory only — persistence not required |
 | 2.2 | WorkspaceRegistry | ✅ | `internal/workspace/workspace.go` — exact paths + `/*` glob |
 | 2.3 | AgentRegistry | ✅ | Scans `~/.agents_manager/agents/` + `$PATH` system agents |
 | 2.4 | SkillRegistry | ✅ | Scans global/workspace/agent scopes, `.desc` files, `--help` fallback |
 | 2.5 | Shell command router | ✅ | `internal/shell/shell.go` — dispatches built-ins vs agent forwarding |
 | 2.6 | Built-in commands | ✅ | `help`, `workspaces/ws`, `ls`, `cd`, `open`, `pwd`, `ps`, `use`, `agents`, `skills`, `kill`, `history`, `os`, `repl` |
 | 2.7 | Request forwarder | ✅ | Forwards non-built-in input to current agent |
+| 2.8 | Session history persistence | ❌ | **Not implemented** — persist request history to disk for client reconnection |
 
 ## Phase 3: Protocol — HTTP + WebSocket + SSE
 
@@ -84,8 +86,8 @@
 
 | # | Feature | Status | Notes |
 |---|---------|--------|-------|
-| 8.1 | Crash recovery (BoltDB) | ❌ | **Not implemented** — sessions are in-memory only |
-| 8.2 | Multi-device sync | ❌ | Blocked on BoltDB persistence |
+| 8.1 | Crash recovery (BoltDB) | — | **Removed** — out of scope (sessions are transient) |
+| 8.2 | Multi-device sync | — | **Removed** — out of scope |
 | 8.3 | Graceful shutdown | ⚠️ | Pool drains on `Shutdown()` but no OS `SIGTERM` handler in `main()` |
 | 8.4 | Resource limits per agent | ❌ | **Not implemented** |
 | 8.5 | Prometheus metrics | ❌ | **Not implemented** (structured logs exist) |
@@ -109,11 +111,9 @@
 ## Suggestions for Future Addition
 
 1. **SSH server** — the single largest missing feature; `golang.org/x/crypto/ssh` is already available in `go.mod`
-2. **BoltDB persistence** — sessions vanish on restart; implement `internal/session/store.go` BoltDB backend (already designed, `go.etcd.io/bbolt` compatible)
-3. **Graceful shutdown** — add `os.Signal` handler for `SIGTERM`/`SIGINT` in `main.go` to drain pool + save state
-4. **`.ash` script execution** — `agents_manager shell` mode that extends bash with built-in commands
-5. **Resource limits** — per-agent CPU/memory limits via cgroups or `exec.Cmd.SysProcAttr`
-6. **Embed static files** — use `//go:embed` to bundle the web SPA into the binary for single-file distribution
-7. **Prometheus metrics endpoint** — expose `/metrics` for observability
-8. **Provider config per agent** — `ProviderConfig` exists in `agent.go` but isn't configurable from YAML; could load per-agent `.yaml` files from `~/.agents_manager/agents/<name>/`
-9. **Multi-device session sync** — once BoltDB is in place, same session state visible across SSH + WebSocket simultaneously
+2. **Graceful shutdown** — add `os.Signal` handler for `SIGTERM`/`SIGINT` in `main.go` to drain pool + save state
+3. **`.ash` script execution** — `agents_manager shell` mode that extends bash with built-in commands
+4. **Resource limits** — per-agent CPU/memory limits via cgroups or `exec.Cmd.SysProcAttr`
+5. **Embed static files** — use `//go:embed` to bundle the web SPA into the binary for single-file distribution
+6. **Prometheus metrics endpoint** — expose `/metrics` for observability
+7. **Provider config per agent** — `ProviderConfig` exists in `agent.go` but isn't configurable from YAML; could load per-agent `.yaml` files from `~/.agents_manager/agents/<name>/`
