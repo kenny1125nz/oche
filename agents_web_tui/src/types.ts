@@ -40,10 +40,6 @@ export interface InteractiveTab {
   createdAt: number
 }
 
-export interface StreamBuffer {
-  lines: string[]
-}
-
 export interface AuthStatus {
   password_set: boolean
 }

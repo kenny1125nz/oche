@@ -1,6 +1,7 @@
 package pool
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -13,6 +14,24 @@ import (
 
 	"github.com/creack/pty"
 )
+
+type Pooler interface {
+	Submit(sessionID, binary string, args []string, dir string, requestText string) (<-chan ResponseEvent, error)
+	SubmitWithMode(sessionID, binary string, args []string, dir string, mode ProcessMode, requestText string) (<-chan ResponseEvent, error)
+	SendInput(pid int, text string) error
+	ResizePTY(pid int, rows, cols uint16) error
+	SubscribeAgent(pid int) (chan string, error)
+	UnsubscribeAgent(pid int, ch chan string)
+	GetAgent(pid int) *Agent
+	GetAgentBySession(sessionID string) *Agent
+	KillByPID(pid int) error
+	Kill(sessionID string) error
+	ActiveList() []AgentInfo
+	ActiveCount() int
+	QueuedCount() int
+	HasActive(sessionID string) bool
+	Shutdown()
+}
 
 type Pool struct {
 	max    int
@@ -286,6 +305,18 @@ func fmtAgentCmd(binary string, args []string, dir string) string {
 	return s
 }
 
+func (p *Pool) spawnError(sessionID string, cancel context.CancelFunc, id string, msg string, ch chan ResponseEvent) {
+	cancel()
+	p.removeInstance(id, sessionID)
+	ch <- ResponseEvent{
+		SessionID: sessionID,
+		Type:      "error",
+		Text:      msg,
+		Timestamp: time.Now(),
+	}
+	close(ch)
+}
+
 func (p *Pool) spawn(sessionID, binary string, args []string, dir string, mode ProcessMode, requestText string, ch chan ResponseEvent) {
 	ctx, cancel := context.WithCancel(context.Background())
 	agent := NewAgent(sessionID, binary, args, dir, mode, cancel)
@@ -302,54 +333,42 @@ func (p *Pool) spawn(sessionID, binary string, args []string, dir string, mode P
 
 	p.log("spawn process", "session", sessionID, "binary", binary, "args", args, "dir", dir, "mode", mode)
 
-	var stdoutReader, stderrReader io.Reader
-
 	if mode == PTYMode {
-		ptmx, err := pty.StartWithSize(cmd, &pty.Winsize{Rows: 24, Cols: 80})
-		if err != nil {
-			cancel()
-			p.removeInstance(id, sessionID)
-			ch <- ResponseEvent{
-				SessionID: sessionID,
-				Type:      "error",
-				Text:      fmt.Sprintf("pty spawn: %v", err),
-				Timestamp: time.Now(),
-			}
-			close(ch)
-			return
-		}
-		agent.SetPTY(ptmx)
-		agent.stdin = ptmx
-		stdoutReader = ptmx
-		stderrReader = nil
-		agent.Cmd = cmd
-		agent.PID = cmd.Process.Pid
-		p.byPID[agent.PID] = agent
-
-		p.log("process spawned", "session", sessionID, "pid", agent.PID, "cmd", fmtAgentCmd(binary, args, dir), "mode", mode)
-
-		ch <- ResponseEvent{
-			SessionID: sessionID,
-			Type:      "ack",
-			Text:      fmt.Sprintf("spawned (pid %d)", cmd.Process.Pid),
-			Timestamp: time.Now(),
-		}
-
-		go p.monitor(agent, stdoutReader, stderrReader, ch)
+		p.spawnPTY(sessionID, agent, cmd, ch)
 		return
 	}
 
+	p.spawnPipe(sessionID, agent, cmd, requestText, ch)
+}
+
+func (p *Pool) spawnPTY(sessionID string, agent *Agent, cmd *exec.Cmd, ch chan ResponseEvent) {
+	ptmx, err := pty.StartWithSize(cmd, &pty.Winsize{Rows: 24, Cols: 80})
+	if err != nil {
+		p.spawnError(sessionID, agent.cancel, agent.InstanceID, fmt.Sprintf("pty spawn: %v", err), ch)
+		return
+	}
+	agent.SetPTY(ptmx)
+	agent.stdin = ptmx
+	agent.Cmd = cmd
+	agent.PID = cmd.Process.Pid
+	p.byPID[agent.PID] = agent
+
+	p.log("process spawned", "session", sessionID, "pid", agent.PID, "cmd", fmtAgentCmd(agent.Binary, agent.Args, agent.Dir), "mode", PTYMode)
+
+	ch <- ResponseEvent{
+		SessionID: sessionID,
+		Type:      "ack",
+		Text:      fmt.Sprintf("spawned (pid %d)", cmd.Process.Pid),
+		Timestamp: time.Now(),
+	}
+
+	go p.monitor(agent, ptmx, nil, ch)
+}
+
+func (p *Pool) spawnPipe(sessionID string, agent *Agent, cmd *exec.Cmd, requestText string, ch chan ResponseEvent) {
 	stdinPipe, err := cmd.StdinPipe()
 	if err != nil {
-		cancel()
-		p.removeInstance(id, sessionID)
-		ch <- ResponseEvent{
-			SessionID: sessionID,
-			Type:      "error",
-			Text:      fmt.Sprintf("stdin pipe: %v", err),
-			Timestamp: time.Now(),
-		}
-		close(ch)
+		p.spawnError(sessionID, agent.cancel, agent.InstanceID, fmt.Sprintf("stdin pipe: %v", err), ch)
 		return
 	}
 	agent.stdin = stdinPipe
@@ -361,54 +380,28 @@ func (p *Pool) spawn(sessionID, binary string, args []string, dir string, mode P
 
 	stdoutPipe, err := cmd.StdoutPipe()
 	if err != nil {
-		cancel()
-		p.removeInstance(id, sessionID)
-		ch <- ResponseEvent{
-			SessionID: sessionID,
-			Type:      "error",
-			Text:      fmt.Sprintf("stdout pipe: %v", err),
-			Timestamp: time.Now(),
-		}
-		close(ch)
+		p.spawnError(sessionID, agent.cancel, agent.InstanceID, fmt.Sprintf("stdout pipe: %v", err), ch)
 		return
 	}
-	stdoutReader = stdoutPipe
 
 	stderrPipe, err := cmd.StderrPipe()
 	if err != nil {
-		cancel()
-		p.removeInstance(id, sessionID)
-		ch <- ResponseEvent{
-			SessionID: sessionID,
-			Type:      "error",
-			Text:      fmt.Sprintf("stderr pipe: %v", err),
-			Timestamp: time.Now(),
-		}
-		close(ch)
+		p.spawnError(sessionID, agent.cancel, agent.InstanceID, fmt.Sprintf("stderr pipe: %v", err), ch)
 		return
 	}
-	stderrReader = stderrPipe
 
 	agent.Cmd = cmd
 
 	if err := cmd.Start(); err != nil {
-		cancel()
-		p.removeInstance(id, sessionID)
 		p.log("spawn failed", "session", sessionID, "error", err)
-		ch <- ResponseEvent{
-			SessionID: sessionID,
-			Type:      "error",
-			Text:      fmt.Sprintf("spawn: %v", err),
-			Timestamp: time.Now(),
-		}
-		close(ch)
+		p.spawnError(sessionID, agent.cancel, agent.InstanceID, fmt.Sprintf("spawn: %v", err), ch)
 		return
 	}
 
 	agent.PID = cmd.Process.Pid
 	p.byPID[agent.PID] = agent
 
-	p.log("process spawned", "session", sessionID, "pid", agent.PID, "cmd", fmtAgentCmd(binary, args, dir), "mode", mode)
+	p.log("process spawned", "session", sessionID, "pid", agent.PID, "cmd", fmtAgentCmd(agent.Binary, agent.Args, agent.Dir), "mode", PipeMode)
 
 	ch <- ResponseEvent{
 		SessionID: sessionID,
@@ -417,119 +410,92 @@ func (p *Pool) spawn(sessionID, binary string, args []string, dir string, mode P
 		Timestamp: time.Now(),
 	}
 
-	go p.monitor(agent, stdoutReader, stderrReader, ch)
+	go p.monitor(agent, stdoutPipe, stderrPipe, ch)
+}
+
+func readOutput(agent *Agent, r io.Reader, ch chan ResponseEvent, target *bytes.Buffer, onDone func()) {
+	buf := make([]byte, 4096)
+	for {
+		n, err := r.Read(buf)
+		if n > 0 {
+			chunk := make([]byte, n)
+			copy(chunk, buf[:n])
+			agent.mu.Lock()
+			target.Write(chunk)
+			agent.mu.Unlock()
+			text := string(chunk)
+			agent.broadcast(text)
+			ch <- ResponseEvent{
+				SessionID: agent.SessionID,
+				Type:      "progress",
+				Text:      text,
+				Data:      chunk,
+				Timestamp: time.Now(),
+			}
+		}
+		if err != nil {
+			if onDone != nil {
+				onDone()
+			}
+			return
+		}
+	}
 }
 
 func (p *Pool) monitor(agent *Agent, stdout, stderr io.Reader, ch chan ResponseEvent) {
-	sessionID := agent.SessionID
 	var wg sync.WaitGroup
 
-	if agent.Mode == PTYMode {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			buf := make([]byte, 4096)
-			for {
-				n, err := stdout.Read(buf)
-				if n > 0 {
-					chunk := make([]byte, n)
-					copy(chunk, buf[:n])
-					agent.mu.Lock()
-					agent.stdout.Write(chunk)
-					agent.mu.Unlock()
-					text := string(chunk)
-					agent.broadcast(text)
-					ch <- ResponseEvent{
-						SessionID: sessionID,
-						Type:      "progress",
-						Text:      text,
-						Data:      chunk,
-						Timestamp: time.Now(),
-					}
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		var onDone func()
+		if agent.Mode == PTYMode {
+			onDone = func() {
+				agent.mu.Lock()
+				if agent.pty != nil {
+					agent.pty.Close()
+					agent.pty = nil
 				}
-				if err != nil {
-					agent.mu.Lock()
-					if agent.pty != nil {
-						agent.pty.Close()
-						agent.pty = nil
-					}
-					agent.mu.Unlock()
-					return
-				}
+				agent.mu.Unlock()
 			}
-		}()
-	} else {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			buf := make([]byte, 4096)
-			for {
-				n, err := stdout.Read(buf)
-				if n > 0 {
-					chunk := make([]byte, n)
-					copy(chunk, buf[:n])
-					agent.mu.Lock()
-					agent.stdout.Write(chunk)
-					agent.mu.Unlock()
-					text := string(chunk)
-					agent.broadcast(text)
-					ch <- ResponseEvent{
-						SessionID: sessionID,
-						Type:      "progress",
-						Text:      text,
-						Data:      chunk,
-						Timestamp: time.Now(),
-					}
-				}
-				if err != nil {
-					return
-				}
-			}
-		}()
+		}
+		readOutput(agent, stdout, ch, agent.stdout, onDone)
+	}()
 
+	if agent.Mode != PTYMode && stderr != nil {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			buf := make([]byte, 4096)
-			for {
-				n, err := stderr.Read(buf)
-				if n > 0 {
-					chunk := make([]byte, n)
-					copy(chunk, buf[:n])
-					agent.mu.Lock()
-					agent.stderr.Write(chunk)
-					agent.mu.Unlock()
-					text := string(chunk)
-					agent.broadcast(text)
-					ch <- ResponseEvent{
-						SessionID: sessionID,
-						Type:      "progress",
-						Text:      text,
-						Data:      chunk,
-						Timestamp: time.Now(),
-					}
-				}
-				if err != nil {
-					return
-				}
-			}
+			readOutput(agent, stderr, ch, agent.stderr, nil)
 		}()
 	}
 
 	wg.Wait()
 
-	err := agent.Cmd.Wait()
-
+	exitErr := agent.Cmd.Wait()
 	agent.CloseStdin()
 
 	p.mu.Lock()
-	p.removeInstance(agent.InstanceID, sessionID)
+	p.removeInstance(agent.InstanceID, agent.SessionID)
 	delete(p.byPID, agent.PID)
 	p.mu.Unlock()
 
+	p.emitExitEvent(agent, exitErr, ch)
+
+	agent.broadcast("__agent_exit__")
+	close(ch)
+
+	p.mu.Lock()
+	p.dispatchNext()
+	p.mu.Unlock()
+}
+
+func (p *Pool) emitExitEvent(agent *Agent, err error, ch chan ResponseEvent) {
+	sessionID := agent.SessionID
+
 	if err != nil {
-		if err, ok := err.(*exec.ExitError); ok {
-			agent.ExitCode = err.ExitCode()
+		if ee, ok := err.(*exec.ExitError); ok {
+			agent.ExitCode = ee.ExitCode()
 		}
 		stderrText := strings.TrimSpace(agent.stderr.String())
 		stderrSuffix := ""
@@ -568,13 +534,6 @@ func (p *Pool) monitor(agent *Agent, stdout, stderr io.Reader, ch chan ResponseE
 		Text:      "done",
 		Timestamp: time.Now(),
 	}
-
-	agent.broadcast("__agent_exit__")
-	close(ch)
-
-	p.mu.Lock()
-	p.dispatchNext()
-	p.mu.Unlock()
 }
 
 // removeInstance removes an agent instance from both p.active and

@@ -9,8 +9,8 @@ import (
 	"github.com/anomalyco/agents_manager/internal/session"
 )
 
-func buildAgentArgs(reg *agent.Registration, input string) (args []string, stdinInput string) {
-	if cfg, ok := agent.ProviderFor(reg.ID); ok {
+func buildAgentArgs(reg *agent.Registration, input string, providers agent.Registry) (args []string, stdinInput string) {
+	if cfg, ok := providers.ProviderFor(reg.ID); ok {
 		if cfg.UseStdin {
 			return nil, input
 		}
@@ -23,31 +23,27 @@ func buildAgentArgs(reg *agent.Registration, input string) (args []string, stdin
 	return nil, input
 }
 
+func newErrorResponse(msg string) <-chan pool.ResponseEvent {
+	ch := make(chan pool.ResponseEvent, 5)
+	emit(ch, "error", msg)
+	ch <- pool.ResponseEvent{Type: "deliverable", Text: "done", Timestamp: time.Now()}
+	close(ch)
+	return ch
+}
+
 func (r *Router) forwardToAgent(sessionID, input string) <-chan pool.ResponseEvent {
 	sess, err := r.store.Get(sessionID)
 	if err != nil {
-		ch := make(chan pool.ResponseEvent, 5)
-		emit(ch, "error", err.Error())
-		ch <- pool.ResponseEvent{Type: "deliverable", Text: "done", Timestamp: time.Now()}
-		close(ch)
-		return ch
+		return newErrorResponse(err.Error())
 	}
 
 	if sess.AgentID == "" {
-		ch := make(chan pool.ResponseEvent, 5)
-		emit(ch, "error", "no agent selected (use 'agents' to list, 'use <agent>' to select)")
-		ch <- pool.ResponseEvent{Type: "deliverable", Text: "done", Timestamp: time.Now()}
-		close(ch)
-		return ch
+		return newErrorResponse("no agent selected (use 'agents' to list, 'use <agent>' to select)")
 	}
 
 	reg, err := r.agents.Get(sess.AgentID)
 	if err != nil {
-		ch := make(chan pool.ResponseEvent, 5)
-		emit(ch, "error", err.Error())
-		ch <- pool.ResponseEvent{Type: "deliverable", Text: "done", Timestamp: time.Now()}
-		close(ch)
-		return ch
+		return newErrorResponse(err.Error())
 	}
 
 	r.store.AddHistory(sessionID, session.Request{
@@ -59,7 +55,7 @@ func (r *Router) forwardToAgent(sessionID, input string) <-chan pool.ResponseEve
 
 	workDir := sess.EffectiveDir(r.workspaces)
 
-	agentArgs, stdinInput := buildAgentArgs(reg, input)
+	agentArgs, stdinInput := buildAgentArgs(reg, input, r.agents)
 
 	cmdStr := reg.ID
 	for _, a := range agentArgs {
@@ -75,11 +71,7 @@ func (r *Router) forwardToAgent(sessionID, input string) <-chan pool.ResponseEve
 
 	poolCh, err := r.pool.Submit(sessionID, reg.Binary, agentArgs, workDir, stdinInput)
 	if err != nil {
-		ech := make(chan pool.ResponseEvent, 5)
-		emit(ech, "error", err.Error())
-		ech <- pool.ResponseEvent{Type: "deliverable", Text: "done", Timestamp: time.Now()}
-		close(ech)
-		return ech
+		return newErrorResponse(err.Error())
 	}
 
 	ch := make(chan pool.ResponseEvent, 256)

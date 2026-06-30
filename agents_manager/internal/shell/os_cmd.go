@@ -6,15 +6,12 @@ import (
 	"os"
 	"os/exec"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/anomalyco/agents_manager/internal/pool"
 	"github.com/creack/pty"
 	"golang.org/x/term"
 )
-
-var osProcesses sync.Map
 
 func (r *Router) cmdOs(sessionID string, args []string) <-chan pool.ResponseEvent {
 	ch := make(chan pool.ResponseEvent, 4096)
@@ -52,7 +49,7 @@ func (r *Router) cmdOs(sessionID string, args []string) <-chan pool.ResponseEven
 	if _, err := term.MakeRaw(int(ptmx.Fd())); err != nil {
 	}
 
-	osProcesses.Store(sessionID, ptmx)
+	r.osProcesses.Store(sessionID, ptmx)
 
 	go func() {
 		buf := make([]byte, 4096)
@@ -75,7 +72,7 @@ func (r *Router) cmdOs(sessionID string, args []string) <-chan pool.ResponseEven
 
 		waitErr := cmd.Wait()
 		ptmx.Close()
-		osProcesses.Delete(sessionID)
+		r.osProcesses.Delete(sessionID)
 
 		if waitErr != nil {
 			ch <- pool.ResponseEvent{
@@ -95,21 +92,21 @@ func (r *Router) cmdOs(sessionID string, args []string) <-chan pool.ResponseEven
 	return ch
 }
 
-func WriteOSInput(sessionID, text string) {
-	if v, ok := osProcesses.Load(sessionID); ok {
+func (r *Router) HasOSProcess(sessionID string) bool {
+	_, ok := r.osProcesses.Load(sessionID)
+	return ok
+}
+
+func (r *Router) WriteOSInput(sessionID, text string) {
+	if v, ok := r.osProcesses.Load(sessionID); ok {
 		if ptmx, ok := v.(*os.File); ok {
 			io.WriteString(ptmx, text)
 		}
 	}
 }
 
-func HasOSProcess(sessionID string) bool {
-	_, ok := osProcesses.Load(sessionID)
-	return ok
-}
-
-func ResizeOSProcess(sessionID string, rows, cols uint16) error {
-	v, ok := osProcesses.Load(sessionID)
+func (r *Router) ResizeOSProcess(sessionID string, rows, cols uint16) error {
+	v, ok := r.osProcesses.Load(sessionID)
 	if !ok {
 		return fmt.Errorf("no OS process for session %s", sessionID)
 	}

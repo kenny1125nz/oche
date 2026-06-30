@@ -1,6 +1,5 @@
+import { BASE } from './config'
 import type { AuthStatus, AuthResponse } from '../types'
-
-const BASE = ''
 
 export async function checkStatus(): Promise<AuthStatus> {
   const res = await fetch(BASE + '/auth/status')
@@ -44,6 +43,8 @@ export async function refreshAccess(refreshToken: string): Promise<AuthResponse>
 }
 
 export async function tryConnect(accessToken: string): Promise<boolean> {
-  const res = await fetch(BASE + '/api/pool?token=' + encodeURIComponent(accessToken))
+  const res = await fetch(BASE + '/api/pool', {
+    headers: { 'Authorization': 'Bearer ' + accessToken },
+  })
   return res.ok
 }

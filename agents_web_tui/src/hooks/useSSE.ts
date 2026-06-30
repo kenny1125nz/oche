@@ -1,7 +1,6 @@
 import { useEffect, useRef } from 'react'
+import { BASE } from '../api/config'
 import type { DashboardData } from '../types'
-
-const BASE = ''
 
 export function useSSE(accessToken: string | null, onDashboard: (data: DashboardData) => void) {
   const esRef = useRef<EventSource | null>(null)

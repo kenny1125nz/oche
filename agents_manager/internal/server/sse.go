@@ -11,8 +11,8 @@ import (
 )
 
 type sseHandler struct {
-	store *session.Store
-	pool  *pool.Pool
+	store session.Storer
+	pool  pool.Pooler
 }
 
 func (h *sseHandler) dashboard(w http.ResponseWriter, r *http.Request) {

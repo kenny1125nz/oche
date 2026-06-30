@@ -38,7 +38,7 @@ type Request struct {
 	CompletedAt *time.Time `json:"completed_at,omitempty"`
 }
 
-func (s *Session) EffectiveDir(reg *workspace.Registry) string {
+func (s *Session) EffectiveDir(reg workspace.Registry) string {
 	if s.WorkspaceID == "" {
 		return ""
 	}

@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
 import { useStore } from '../state'
 import { checkStatus, setupPassword, login, tryConnect } from '../api/auth'
+import type { AuthResponse } from '../types'
 
 export function AuthScreen() {
   const { state, dispatch } = useStore()
@@ -8,6 +9,25 @@ export function AuthScreen() {
   const [confirm, setConfirm] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+
+  const authenticate = useCallback(async (apiCall: () => Promise<AuthResponse>, failMsg: string) => {
+    setLoading(true)
+    try {
+      const data = await apiCall()
+      dispatch({ type: 'SET_TOKENS', accessToken: data.access_token, refreshToken: data.refresh_token })
+      localStorage.setItem('access_token', data.access_token)
+      if (data.refresh_token) localStorage.setItem('refresh_token', data.refresh_token)
+
+      if (await tryConnect(data.access_token)) {
+        dispatch({ type: 'SET_AUTHENTICATED', value: true })
+        dispatch({ type: 'SET_AUTH', show: false, mode: 'login', title: '', desc: '' })
+      }
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : failMsg)
+    } finally {
+      setLoading(false)
+    }
+  }, [dispatch])
 
   const handleSubmit = async () => {
     setError('')
@@ -21,41 +41,11 @@ export function AuthScreen() {
         setError('Password too short')
         return
       }
-      setLoading(true)
-      try {
-        const data = await setupPassword(password)
-        dispatch({ type: 'SET_TOKENS', accessToken: data.access_token, refreshToken: data.refresh_token })
-        localStorage.setItem('access_token', data.access_token)
-        if (data.refresh_token) localStorage.setItem('refresh_token', data.refresh_token)
-
-        if (await tryConnect(data.access_token)) {
-          dispatch({ type: 'SET_AUTHENTICATED', value: true })
-          dispatch({ type: 'SET_AUTH', show: false, mode: 'login', title: '', desc: '' })
-        }
-      } catch (e: unknown) {
-        setError(e instanceof Error ? e.message : 'Setup failed')
-      } finally {
-        setLoading(false)
-      }
+      await authenticate(() => setupPassword(password), 'Setup failed')
       return
     }
 
-    setLoading(true)
-    try {
-      const data = await login(password)
-      dispatch({ type: 'SET_TOKENS', accessToken: data.access_token, refreshToken: data.refresh_token })
-      localStorage.setItem('access_token', data.access_token)
-      if (data.refresh_token) localStorage.setItem('refresh_token', data.refresh_token)
-
-      if (await tryConnect(data.access_token)) {
-        dispatch({ type: 'SET_AUTHENTICATED', value: true })
-        dispatch({ type: 'SET_AUTH', show: false, mode: 'login', title: '', desc: '' })
-      }
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Login failed')
-    } finally {
-      setLoading(false)
-    }
+    await authenticate(() => login(password), 'Login failed')
   }
 
   return (

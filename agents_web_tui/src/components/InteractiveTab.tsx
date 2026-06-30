@@ -1,10 +1,8 @@
 import { useState, useEffect, useRef } from 'react'
-import { Terminal } from '@xterm/xterm'
-import { FitAddon } from '@xterm/addon-fit'
 import { useStore } from '../state'
+import { useXtermTerminal } from '../hooks/useXtermTerminal'
 import type { InteractiveTab as InteractiveTabType } from '../types'
 import { filterTerminalQueries } from '../utils/filterTerminalQueries'
-import '@xterm/xterm/css/xterm.css'
 
 interface Props {
   tab: InteractiveTabType
@@ -17,74 +15,15 @@ interface Props {
 export function InteractiveTab({ tab, buffer, streamVersion, sendToAgent, resizeAgent }: Props) {
   const { state } = useStore()
   const containerRef = useRef<HTMLDivElement>(null)
-  const termRef = useRef<Terminal | null>(null)
-  const fitRef = useRef<FitAddon | null>(null)
   const [input, setInput] = useState('')
   const renderedRef = useRef(0)
 
-  useEffect(() => {
-    const container = containerRef.current
-    if (!container) return
-
-    const term = new Terminal({
-      cursorBlink: true,
-      convertEol: true,
-      fontSize: 13,
-      fontFamily: "'Courier New', monospace",
-      theme: {
-        background: '#0d1117',
-        foreground: '#c9d1d9',
-        cursor: '#58a6ff',
-        selectionBackground: '#264f78',
-        black: '#484f58',
-        red: '#f85149',
-        green: '#7ee787',
-        yellow: '#d29922',
-        blue: '#58a6ff',
-        magenta: '#bc8cff',
-        cyan: '#39c5cf',
-        white: '#c9d1d9',
-        brightBlack: '#6e7681',
-        brightRed: '#ff7b72',
-        brightGreen: '#7ee787',
-        brightYellow: '#d29922',
-        brightBlue: '#58a6ff',
-        brightMagenta: '#bc8cff',
-        brightCyan: '#39c5cf',
-        brightWhite: '#f0f6fc',
-      },
-    })
-
-    const fit = new FitAddon()
-    term.loadAddon(fit)
-    term.open(container)
-    fit.fit()
-    term.focus()
-    resizeAgent(tab.pid, term.cols, term.rows)
-
-    termRef.current = term
-    fitRef.current = fit
-
-    const disposeData = term.onData((data: string) => {
-      sendToAgent(tab.pid, data)
-    })
-
-    const ro = new ResizeObserver(() => {
-      try { fit.fit() } catch { /* ignore */ }
-      if (termRef.current) {
-        try {
-          resizeAgent(tab.pid, termRef.current.cols, termRef.current.rows)
-        } catch { /* ignore */ }
-      }
-    })
-    ro.observe(container)
-
-    return () => {
-      disposeData.dispose()
-      ro.disconnect()
-      term.dispose()
-    }
-  }, [tab.pid, sendToAgent])
+  const { termRef, fitRef } = useXtermTerminal({
+    containerRef,
+    fontSize: 13,
+    onData: (data) => sendToAgent(tab.pid, data),
+    onResize: (cols, rows) => resizeAgent(tab.pid, cols, rows),
+  })
 
   useEffect(() => {
     if (state.activeTab === 'repl-' + tab.pid && fitRef.current && termRef.current) {

@@ -1,12 +1,14 @@
 package server
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/anomalyco/agents_manager/internal/agent"
 	"github.com/anomalyco/agents_manager/internal/auth"
@@ -22,15 +24,15 @@ type Config struct {
 	Bind        string
 	StaticDir   string
 	AuthManager *auth.Manager
-	Sessions    *session.Store
-	Workspaces  *workspace.Registry
-	Agents      *agent.Registry
+	Sessions    session.Storer
+	Workspaces  workspace.Registry
+	Agents      agent.Registry
 	Skills      *skill.Registry
-	Pool        *pool.Pool
+	Pool        pool.Pooler
 	Router      *shell.Router
 }
 
-func Start(cfg Config) error {
+func Start(cfg Config) (*http.Server, error) {
 	mux := http.NewServeMux()
 
 	// Auth endpoints
@@ -110,6 +112,23 @@ func Start(cfg Config) error {
 	handler = setupCheckMiddleware(authMgr, handler)
 
 	addr := fmt.Sprintf("%s:%d", cfg.Bind, cfg.Port)
-	log.Printf("HTTP server listening on %s", addr)
-	return http.ListenAndServe(addr, handler)
+	srv := &http.Server{
+		Addr:    addr,
+		Handler: handler,
+	}
+
+	go func() {
+		log.Printf("HTTP server listening on %s", addr)
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Printf("HTTP server error: %v", err)
+		}
+	}()
+
+	return srv, nil
+}
+
+func Shutdown(srv *http.Server, timeout time.Duration) error {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	return srv.Shutdown(ctx)
 }

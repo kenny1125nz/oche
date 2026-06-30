@@ -12,7 +12,7 @@ import (
 )
 
 type wsAgentHandler struct {
-	pool *pool.Pool
+	pool pool.Pooler
 }
 
 func (h *wsAgentHandler) serve(w http.ResponseWriter, r *http.Request) {
@@ -49,31 +49,6 @@ func (h *wsAgentHandler) serve(w http.ResponseWriter, r *http.Request) {
 		conn.WriteMessage(gorilla.TextMessage, b)
 	}
 
-	drainChan := func() {
-		for {
-			select {
-			case line := <-ch:
-				if line == "__agent_exit__" {
-					writeJSON(map[string]any{"exit": true})
-					return
-				}
-				if line == "" {
-					continue
-				}
-				writeJSON(map[string]string{"text": line})
-			default:
-				return
-			}
-		}
-	}
-
-	drainChan()
-
-	// Reader goroutine: forward browser xterm.js responses (e.g. cursor
-	// position reports, DECRPM answers) back to the agent's PTY stdin so
-	// terminal capability negotiation works bidirectionally.
-	// User keystrokes are NOT captured here — they go through the REST
-	// endpoint /api/agent/<pid>/input for low-latency typing.
 	go func() {
 		defer conn.Close()
 		for {
@@ -95,39 +70,17 @@ func (h *wsAgentHandler) serve(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 			if req.Input != "" {
-				// Raw write — no newline appended (terminal responses are
-				// escape sequences that must not be altered).
 				ag.WriteStdinRaw([]byte(req.Input))
 			}
 		}
 	}()
 
-	// Replay history
-	stdout := ag.StdoutLines()
-	stderr := ag.StderrLines()
-	for _, line := range stdout {
-		if line != "" {
+	streamAgentOutput(r.Context(), ch, ag, streamCallbacks{
+		writeLine: func(line string) {
 			writeJSON(map[string]string{"text": line})
-		}
-	}
-	for _, line := range stderr {
-		if line != "" {
-			writeJSON(map[string]string{"text": line})
-		}
-	}
-
-	// Live loop
-	for {
-		line, ok := <-ch
-		if !ok {
-			return
-		}
-		if line == "__agent_exit__" {
+		},
+		writeExit: func() {
 			writeJSON(map[string]any{"exit": true})
-			return
-		}
-		if line != "" {
-			writeJSON(map[string]string{"text": line})
-		}
-	}
+		},
+	})
 }

@@ -20,17 +20,24 @@ type Entry struct {
 	Children []Entry `json:"children,omitempty"`
 }
 
-type Registry struct {
+type Registry interface {
+	Discover(paths []string) error
+	Get(id string) (*Workspace, error)
+	List() []*Workspace
+	Len() int
+}
+
+type registry struct {
 	workspaces map[string]*Workspace
 }
 
-func NewRegistry() *Registry {
-	return &Registry{
+func NewRegistry() Registry {
+	return &registry{
 		workspaces: make(map[string]*Workspace),
 	}
 }
 
-func (r *Registry) Discover(paths []string) error {
+func (r *registry) Discover(paths []string) error {
 	for _, p := range paths {
 		if strings.HasSuffix(p, "/*") || strings.HasSuffix(p, "\\*") {
 			base := strings.TrimRight(p, "/*\\")
@@ -72,7 +79,7 @@ func (r *Registry) Discover(paths []string) error {
 	return nil
 }
 
-func (r *Registry) Get(id string) (*Workspace, error) {
+func (r *registry) Get(id string) (*Workspace, error) {
 	ws, ok := r.workspaces[id]
 	if !ok {
 		return nil, fmt.Errorf("workspace not found: %s", id)
@@ -80,7 +87,7 @@ func (r *Registry) Get(id string) (*Workspace, error) {
 	return ws, nil
 }
 
-func (r *Registry) List() []*Workspace {
+func (r *registry) List() []*Workspace {
 	result := make([]*Workspace, 0, len(r.workspaces))
 	for _, ws := range r.workspaces {
 		result = append(result, ws)
@@ -91,7 +98,7 @@ func (r *Registry) List() []*Workspace {
 	return result
 }
 
-func (r *Registry) Len() int {
+func (r *registry) Len() int {
 	return len(r.workspaces)
 }
 

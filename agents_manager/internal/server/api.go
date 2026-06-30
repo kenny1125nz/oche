@@ -15,10 +15,10 @@ import (
 )
 
 type apiHandler struct {
-	sessions   *session.Store
-	workspaces *workspace.Registry
-	agents     *agent.Registry
-	pool       *pool.Pool
+	sessions   session.Storer
+	workspaces workspace.Registry
+	agents     agent.Registry
+	pool       pool.Pooler
 }
 
 func (h *apiHandler) sessionsHandler(w http.ResponseWriter, r *http.Request) {
@@ -198,8 +198,6 @@ func (h *apiHandler) agentStreamHandler(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	log.Printf("[agent-stream] agent %d found, mode=%s", pid, ag.Mode)
-
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
@@ -215,64 +213,35 @@ func (h *apiHandler) agentStreamHandler(w http.ResponseWriter, r *http.Request) 
 		log.Printf("[agent-stream] subscribe failed for pid %d: %v", pid, err)
 		return
 	}
-	log.Printf("[agent-stream] subscribed for pid %d", pid)
 	defer h.pool.UnsubscribeAgent(pid, ch)
 
-	drainChan := func() {
-		for {
-			select {
-			case line := <-ch:
-				log.Printf("[agent-stream] drain received %q for pid %d", truncate(line, 80), pid)
-				if line == "__agent_exit__" {
-					fmt.Fprintf(w, "data: %s\n\n", jsonString(map[string]string{"type": "exit", "text": "done"}))
-					flusher.Flush()
-					return
-				}
-				fmt.Fprintf(w, "data: %s\n\n", jsonString(map[string]string{"type": "stdout", "text": line}))
-				flusher.Flush()
-			default:
-				return
-			}
-		}
+	logPrefix := func(msg string) {
+		log.Printf("[agent-stream] %s for pid %d", msg, pid)
 	}
 
-	drainChan()
-
-	stdoutLines := ag.StdoutLines()
-	log.Printf("[agent-stream] replaying %d stdout lines for pid %d", len(stdoutLines), pid)
-	for _, line := range stdoutLines {
-		fmt.Fprintf(w, "data: %s\n\n", jsonString(map[string]string{"type": "stdout", "text": line}))
+	writeSSE := func(typ, text string) {
+		fmt.Fprintf(w, "data: %s\n\n", jsonString(map[string]string{"type": typ, "text": text}))
+		flusher.Flush()
 	}
 
-	stderrLines := ag.StderrLines()
-	log.Printf("[agent-stream] replaying %d stderr lines for pid %d", len(stderrLines), pid)
-	for _, line := range stderrLines {
-		fmt.Fprintf(w, "data: %s\n\n", jsonString(map[string]string{"type": "stderr", "text": line}))
-	}
-	flusher.Flush()
-	log.Printf("[agent-stream] history done for pid %d, entering live loop", pid)
-
-	for {
-		select {
-		case line, ok := <-ch:
-			if !ok {
-				log.Printf("[agent-stream] channel closed for pid %d", pid)
-				return
-			}
-			log.Printf("[agent-stream] live received %q for pid %d", truncate(line, 80), pid)
-			if line == "__agent_exit__" {
-				log.Printf("[agent-stream] exit for pid %d", pid)
-				fmt.Fprintf(w, "data: %s\n\n", jsonString(map[string]string{"type": "exit", "text": "done"}))
-				flusher.Flush()
-				return
-			}
-			fmt.Fprintf(w, "data: %s\n\n", jsonString(map[string]string{"type": "stdout", "text": line}))
+	streamAgentOutput(r.Context(), ch, ag, streamCallbacks{
+		writeLine: func(line string) {
+			logPrefix("sending " + truncate(line, 80))
+			writeSSE("stdout", line)
+		},
+		writeStderr: func(line string) {
+			logPrefix("sending stderr " + truncate(line, 80))
+			writeSSE("stderr", line)
+		},
+		writeExit: func() {
+			logPrefix("exit")
+			writeSSE("exit", "done")
+		},
+		flush: func() {
+			logPrefix("flushing history")
 			flusher.Flush()
-		case <-r.Context().Done():
-			log.Printf("[agent-stream] client disconnected for pid %d", pid)
-			return
-		}
-	}
+		},
+	})
 }
 
 func truncate(s string, n int) string {

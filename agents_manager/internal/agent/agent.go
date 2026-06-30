@@ -33,42 +33,48 @@ var knownSystemAgents = map[string]string{
 	"copilot":            "copilot",
 }
 
-// ProviderConfigs defines how each known agent should be invoked for
-// non-interactive one-shot execution.
-var ProviderConfigs = map[string]ProviderConfig{
-	"opencode": {
-		ArgsTemplate: []string{"run", "{input}"},
-	},
-	"claude": {
-		ArgsTemplate: []string{"-p", "{input}"},
-	},
-	"aider": {
-		ArgsTemplate: []string{"--message", "{input}", "--no-auto-commits", "--yes"},
-	},
-	"github-copilot-cli": {
-		ArgsTemplate: []string{"ask", "{input}"},
-	},
-	"copilot": {
-		ArgsTemplate: []string{"ask", "{input}"},
-	},
-}
-
-func ProviderFor(id string) (ProviderConfig, bool) {
-	cfg, ok := ProviderConfigs[id]
-	return cfg, ok
-}
-
-type Registry struct {
-	agents map[string]*Registration
-}
-
-func NewRegistry() *Registry {
-	return &Registry{
-		agents: make(map[string]*Registration),
+func defaultProviderConfigs() map[string]ProviderConfig {
+	return map[string]ProviderConfig{
+		"opencode": {
+			ArgsTemplate: []string{"run", "{input}"},
+		},
+		"claude": {
+			ArgsTemplate: []string{"-p", "{input}"},
+		},
+		"aider": {
+			ArgsTemplate: []string{"--message", "{input}", "--no-auto-commits", "--yes"},
+		},
+		"github-copilot-cli": {
+			ArgsTemplate: []string{"ask", "{input}"},
+		},
+		"copilot": {
+			ArgsTemplate: []string{"ask", "{input}"},
+		},
 	}
 }
 
-func (r *Registry) Discover(home string) error {
+type Registry interface {
+	Discover(home string) error
+	DiscoverSystem()
+	Get(id string) (*Registration, error)
+	List() []*Registration
+	Len() int
+	ProviderFor(id string) (ProviderConfig, bool)
+}
+
+type registry struct {
+	agents          map[string]*Registration
+	providerConfigs map[string]ProviderConfig
+}
+
+func NewRegistry() Registry {
+	return &registry{
+		agents:          make(map[string]*Registration),
+		providerConfigs: defaultProviderConfigs(),
+	}
+}
+
+func (r *registry) Discover(home string) error {
 	agentsDir := filepath.Join(home, "agents")
 
 	entries, err := os.ReadDir(agentsDir)
@@ -123,7 +129,7 @@ func (r *Registry) Discover(home string) error {
 // DiscoverSystem scans $PATH for well-known CLI coding agents and registers
 // any that are found. Already-registered agents (from ~/.agents_manager/agents/)
 // take precedence and are not overwritten.
-func (r *Registry) DiscoverSystem() {
+func (r *registry) DiscoverSystem() {
 	for bin, id := range knownSystemAgents {
 		if _, exists := r.agents[id]; exists {
 			continue
@@ -141,7 +147,12 @@ func (r *Registry) DiscoverSystem() {
 	}
 }
 
-func (r *Registry) Get(id string) (*Registration, error) {
+func (r *registry) ProviderFor(id string) (ProviderConfig, bool) {
+	cfg, ok := r.providerConfigs[id]
+	return cfg, ok
+}
+
+func (r *registry) Get(id string) (*Registration, error) {
 	reg, ok := r.agents[id]
 	if !ok {
 		return nil, fmt.Errorf("agent not found: %s", id)
@@ -149,7 +160,7 @@ func (r *Registry) Get(id string) (*Registration, error) {
 	return reg, nil
 }
 
-func (r *Registry) List() []*Registration {
+func (r *registry) List() []*Registration {
 	result := make([]*Registration, 0, len(r.agents))
 	for _, reg := range r.agents {
 		result = append(result, reg)
@@ -160,6 +171,6 @@ func (r *Registry) List() []*Registration {
 	return result
 }
 
-func (r *Registry) Len() int {
+func (r *registry) Len() int {
 	return len(r.agents)
 }

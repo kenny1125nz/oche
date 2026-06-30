@@ -3,7 +3,9 @@ import { useStore } from './state'
 import { checkStatus, tryConnect, refreshAccess } from './api/auth'
 import { fetchActiveAgents } from './api/pool'
 import { useSSE } from './hooks/useSSE'
-import { useAgentWS } from './hooks/useAgentWS'
+import { useAgentConnection } from './hooks/useAgentWS'
+
+
 import { AuthScreen } from './components/AuthScreen'
 import { TopBar } from './components/TopBar'
 import { Terminal } from './components/Terminal'
@@ -11,13 +13,12 @@ import { Dashboard } from './components/Dashboard'
 import { AgentModal } from './components/AgentModal'
 import { InteractiveTab } from './components/InteractiveTab'
 
-const streamBuffers = new Map<number, string[]>()
-const streamVersions = new Map<number, number>()
-
 export default function App() {
   const { state, dispatch } = useStore()
   const wsSessionRef = useRef(state.wsSessionId)
   wsSessionRef.current = state.wsSessionId
+  const streamBufsRef = useRef(new Map<number, string[]>())
+  const streamVersRef = useRef(new Map<number, number>())
   const [, forceRender] = useState(0)
 
   const onDashboard = useCallback((data: { type: string; pool: { active: number; queued: number }; sessions: import('./types').Session[] }) => {
@@ -49,25 +50,25 @@ export default function App() {
       .replace(/\x1b\[\?2027[hl]/g, '')
       .replace(/\x1b\[\?(?:100[0236]|101[56])[hl]/g, '')
       .replace(/\x1b\[\?\d+\$p/g, '')
-    let buf = streamBuffers.get(pid)
+    let buf = streamBufsRef.current.get(pid)
     if (!buf) {
       buf = []
-      streamBuffers.set(pid, buf)
+      streamBufsRef.current.set(pid, buf)
     }
     buf.push(cleaned)
-    streamVersions.set(pid, (streamVersions.get(pid) || 0) + 1)
+    streamVersRef.current.set(pid, (streamVersRef.current.get(pid) || 0) + 1)
     forceRender(n => n + 1)
   }, [])
 
   const onStreamExit = useCallback((pid: number) => {
-    streamBuffers.delete(pid)
-    streamVersions.delete(pid)
+    streamBufsRef.current.delete(pid)
+    streamVersRef.current.delete(pid)
     dispatch({ type: 'CLOSE_INTERACTIVE_TAB', pid })
     forceRender(n => n + 1)
   }, [dispatch])
 
   useSSE(state.accessToken?.length ? state.accessToken : null, onDashboard)
-  const { sendToAgent, resizeAgent } = useAgentWS(state.interactiveTabs, state.accessToken, onStreamOutput, onStreamExit)
+  const { sendToAgent, resizeAgent } = useAgentConnection(state.interactiveTabs, state.accessToken, onStreamOutput, onStreamExit, 'ws')
 
   useEffect(() => {
     if (state.activeTab !== 'dashboard' || !state.accessToken) return
@@ -170,7 +171,7 @@ export default function App() {
             className={'tab-content' + (state.activeTab === 'repl-' + tab.pid ? ' active' : '')}
             id={'tab-repl-' + tab.pid}
           >
-            <InteractiveTab tab={tab} buffer={streamBuffers.get(tab.pid) || []} streamVersion={streamVersions.get(tab.pid) || 0} sendToAgent={sendToAgent} resizeAgent={resizeAgent} />
+            <InteractiveTab tab={tab} buffer={streamBufsRef.current.get(tab.pid) || []} streamVersion={streamVersRef.current.get(tab.pid) || 0} sendToAgent={sendToAgent} resizeAgent={resizeAgent} />
           </div>
         ))}
       </div>

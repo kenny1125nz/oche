@@ -1,12 +1,10 @@
 import { useRef, useCallback, useEffect } from 'react'
-import { Terminal as XtermTerminal } from '@xterm/xterm'
-import { FitAddon } from '@xterm/addon-fit'
 import { useStore } from '../state'
 import { useWebSocket } from '../hooks/useWebSocket'
+import { useXtermTerminal } from '../hooks/useXtermTerminal'
 import type { StreamData } from '../types'
 import { filterTerminalQueries } from '../utils/filterTerminalQueries'
 import { ReplShell } from '../replShell'
-import '@xterm/xterm/css/xterm.css'
 
 function getPrompt(agent: string, workspace: string, subWorkspace: string): string {
   const a = agent !== '—' ? agent : 'agents'
@@ -81,43 +79,19 @@ export function Terminal() {
 
   sendRef.current = sendFn
 
+  const { termRef } = useXtermTerminal({
+    containerRef,
+    fontSize: 13,
+    onResize: (cols, rows) => {
+      if (shellRef.current?.busy) {
+        sendRef.current(JSON.stringify({ resize: true, cols, rows }))
+      }
+    },
+  })
+
   useEffect(() => {
-    const container = containerRef.current
-    if (!container) return
-
-    const term = new XtermTerminal({
-      cursorBlink: true,
-      convertEol: true,
-      fontSize: 13,
-      fontFamily: "'Courier New', monospace",
-      theme: {
-        background: '#0d1117',
-        foreground: '#c9d1d9',
-        cursor: '#58a6ff',
-        selectionBackground: '#264f78',
-        black: '#484f58',
-        red: '#f85149',
-        green: '#7ee787',
-        yellow: '#d29922',
-        blue: '#58a6ff',
-        magenta: '#bc8cff',
-        cyan: '#39c5cf',
-        white: '#c9d1d9',
-        brightBlack: '#6e7681',
-        brightRed: '#ff7b72',
-        brightGreen: '#7ee787',
-        brightYellow: '#d29922',
-        brightBlue: '#58a6ff',
-        brightMagenta: '#bc8cff',
-        brightCyan: '#39c5cf',
-        brightWhite: '#f0f6fc',
-      },
-    })
-
-    const fit = new FitAddon()
-    term.loadAddon(fit)
-    term.open(container)
-    fit.fit()
+    const term = termRef.current
+    if (!term) return
 
     termWriteRef.current = (d) => term.write(d)
 
@@ -138,18 +112,8 @@ export function Terminal() {
 
     const disposeData = term.onData((data) => shell.handleTerminalData(data))
 
-    const ro = new ResizeObserver(() => {
-      try { fit.fit() } catch { /* ignore */ }
-      if (shell.busy) {
-        sendRef.current(JSON.stringify({ resize: true, cols: term.cols, rows: term.rows }))
-      }
-    })
-    ro.observe(container)
-
     return () => {
       disposeData.dispose()
-      ro.disconnect()
-      term.dispose()
     }
   }, [])
 

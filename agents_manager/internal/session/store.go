@@ -6,6 +6,15 @@ import (
 	"time"
 )
 
+type Storer interface {
+	Create(sess *Session) error
+	Get(id string) (*Session, error)
+	Update(sess *Session) error
+	Delete(id string) error
+	List() []*Session
+	AddHistory(sessionID string, req Request) error
+}
+
 type Store struct {
 	mu     sync.RWMutex
 	memory map[string]*Session

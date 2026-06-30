@@ -2,13 +2,16 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"crypto/rand"
 	"flag"
 	"fmt"
 	"log/slog"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/anomalyco/agents_manager/internal/agent"
@@ -65,8 +68,17 @@ func main() {
 	}
 }
 
-func runServe(cfg *config.Config, log *slog.Logger) {
-	// Registries
+type appServices struct {
+	wsRegistry workspace.Registry
+	agRegistry agent.Registry
+	skRegistry *skill.Registry
+	store      *session.Store
+	pool       *pool.Pool
+	router     *shell.Router
+	auth       *auth.Manager
+}
+
+func initServices(cfg *config.Config, log *slog.Logger) *appServices {
 	wsRegistry := workspace.NewRegistry()
 	if err := wsRegistry.Discover(cfg.WorkspacePaths); err != nil {
 		fmt.Fprintf(os.Stderr, "workspace discovery: %v\n", err)
@@ -79,18 +91,15 @@ func runServe(cfg *config.Config, log *slog.Logger) {
 	agRegistry.DiscoverSystem()
 
 	skRegistry := skill.NewRegistry(cfg.Home)
-
 	store := session.NewStore()
 
 	poolLog := func(msg string, args ...any) {
 		log.Debug(msg, args...)
 	}
 	agPool := pool.New(cfg.AgentPool.MaxInstances, poolLog)
-	defer agPool.Shutdown()
 
 	router := shell.NewRouter(store, wsRegistry, agRegistry, skRegistry, agPool)
 
-	// Auth
 	jwtSecret := make([]byte, 32)
 	rand.Read(jwtSecret)
 
@@ -104,57 +113,62 @@ func runServe(cfg *config.Config, log *slog.Logger) {
 		cfg.Auth.MaxLoginAttempts, lockoutDur,
 	)
 
-	// Start server
-	err := server.Start(server.Config{
+	return &appServices{
+		wsRegistry: wsRegistry,
+		agRegistry: agRegistry,
+		skRegistry: skRegistry,
+		store:      store,
+		pool:       agPool,
+		router:     router,
+		auth:       authManager,
+	}
+}
+
+func runServe(cfg *config.Config, log *slog.Logger) {
+	svc := initServices(cfg, log)
+	defer svc.pool.Shutdown()
+
+	srv, err := server.Start(server.Config{
 		Port:        cfg.HTTP.Port,
 		Bind:        cfg.HTTP.Bind,
 		StaticDir:   cfg.HTTP.StaticDir,
-		AuthManager: authManager,
-		Sessions:    store,
-		Workspaces:  wsRegistry,
-		Agents:      agRegistry,
-		Skills:      skRegistry,
-		Pool:        agPool,
-		Router:      router,
+		AuthManager: svc.auth,
+		Sessions:    svc.store,
+		Workspaces:  svc.wsRegistry,
+		Agents:      svc.agRegistry,
+		Skills:      svc.skRegistry,
+		Pool:        svc.pool,
+		Router:      svc.router,
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "server error: %v\n", err)
 		os.Exit(1)
+	}
+
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+
+	log.Info("shutting down gracefully...")
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := srv.Shutdown(shutdownCtx); err != nil {
+		log.Error("server shutdown error", "error", err)
 	}
 }
 
 func runREPL(cfg *config.Config, log *slog.Logger) {
 	fmt.Println("Initializing...")
 
-	wsRegistry := workspace.NewRegistry()
-	if err := wsRegistry.Discover(cfg.WorkspacePaths); err != nil {
-		fmt.Fprintf(os.Stderr, "workspace discovery: %v\n", err)
-	}
-
-	agRegistry := agent.NewRegistry()
-	if err := agRegistry.Discover(cfg.Home); err != nil {
-		fmt.Fprintf(os.Stderr, "agent discovery: %v\n", err)
-	}
-	agRegistry.DiscoverSystem()
-
-	skRegistry := skill.NewRegistry(cfg.Home)
-
-	store := session.NewStore()
-
-	poolLog := func(msg string, args ...any) {
-		log.Debug(msg, args...)
-	}
-	agPool := pool.New(cfg.AgentPool.MaxInstances, poolLog)
-	defer agPool.Shutdown()
-
-	router := shell.NewRouter(store, wsRegistry, agRegistry, skRegistry, agPool)
+	svc := initServices(cfg, log)
+	defer svc.pool.Shutdown()
 
 	sess := &session.Session{
 		ID:        "repl-1",
 		Transport: "repl",
 		State:     session.StateIdle,
 	}
-	store.Create(sess)
+	svc.store.Create(sess)
 
 	fmt.Println("Agents Manager REPL")
 	fmt.Println("Type 'help' for commands, Ctrl+C to exit.")
@@ -169,7 +183,7 @@ func runREPL(cfg *config.Config, log *slog.Logger) {
 			continue
 		}
 
-		ch := router.Execute(sess.ID, input)
+		ch := svc.router.Execute(sess.ID, input)
 		for evt := range ch {
 			prefix := ""
 			switch evt.Type {

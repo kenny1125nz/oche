@@ -20,8 +20,8 @@ var upgrader = gorilla.Upgrader{
 
 type wsHandler struct {
 	router  *shell.Router
-	store   *session.Store
-	pool    *pool.Pool
+	store   session.Storer
+	pool    pool.Pooler
 }
 
 func (h *wsHandler) serve(w http.ResponseWriter, r *http.Request) {
@@ -103,9 +103,9 @@ func (h *wsHandler) serve(w http.ResponseWriter, r *http.Request) {
 					s.TermRows = req.Rows
 					h.store.Update(s)
 				}
-				if shell.HasOSProcess(sess.ID) {
-					shell.ResizeOSProcess(sess.ID, req.Rows, req.Cols)
-				} else if ag := h.pool.GetAgentBySession(sess.ID); ag != nil {
+			if h.router.HasOSProcess(sess.ID) {
+				h.router.ResizeOSProcess(sess.ID, req.Rows, req.Cols)
+			} else if ag := h.pool.GetAgentBySession(sess.ID); ag != nil {
 					ag.Resize(req.Rows, req.Cols)
 				}
 				continue
@@ -120,8 +120,8 @@ func (h *wsHandler) serve(w http.ResponseWriter, r *http.Request) {
 				// "os" commands use direct PTY writes (no newline added).
 				// Pool agents (repl, forward) use WriteStdin which does
 				// append \n — only call it when no os process is running.
-				if shell.HasOSProcess(sess.ID) {
-					shell.WriteOSInput(sess.ID, req.Input)
+			if h.router.HasOSProcess(sess.ID) {
+				h.router.WriteOSInput(sess.ID, req.Input)
 				} else if ag := h.pool.GetAgentBySession(sess.ID); ag != nil {
 					ag.WriteStdin(req.Input)
 				}

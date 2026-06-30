@@ -1,7 +1,6 @@
 import { useEffect, useRef, useCallback } from 'react'
+import { BASE } from '../api/config'
 import type { StreamData } from '../types'
-
-const BASE = ''
 
 interface UseWebSocketOptions {
   accessToken: string | null
