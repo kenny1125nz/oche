@@ -1,49 +1,8 @@
-# Process Management Redesign
+# Process Management Redesign — Parallel Implementation
 
-## Current Architecture
+## Objective
 
-### Two parallel process systems
-
-| Aspect | Pool Agents (`pool.Pool`) | OS Commands (`shell.cmdOs`) |
-|---|---|---|
-| Lifecycle | Pool manages spawn, monitor, terminate, cleanup | Ad-hoc in `cmdOs`, inline goroutine |
-| Queue | Built-in queue + max concurrency | None |
-| Modes | PipeMode (batch), PTYMode (interactive) | PTY only |
-| Tracking | `active map[string]*Agent`, `byPID map[int]*Agent` | `Router.osProcesses sync.Map` |
-| Input API | `agent.WriteStdin(text)` / `agent.WriteStdinRaw(data)` | `Router.WriteOSInput(sessionID, text)` |
-| Resize API | `agent.Resize(rows, cols)` | `Router.ResizeOSProcess(sessionID, rows, cols)` |
-| Output streaming | `ResponseEvent` channel + Subscribe/broadcast pub/sub | `ResponseEvent` channel only |
-| Per-process WS | `/ws/agent/<pid>` | None |
-
-### WebSocket topology (N+1 problem)
-
-```
-Session WS (/shell)            Per-process WS (/ws/agent/<pid>)
-┌──────────────────┐           ┌──────────────────┐
-│  wsHandler       │           │  wsAgentHandler  │
-│  reads commands  │           │  streams agent   │
-│  executes via    │           │  output via      │
-│  router.Execute()│           │  SubscribeAgent  │
-│                  │           │                  │
-│  input routing:  │           │  sends input via │
-│  if os → WrOSIn  │           │  WriteStdinRaw   │
-│  elif ag → WrSt  │           └──────────────────┘
-│  else → msgs     │
-└──────────────────┘
-```
-
-### Input routing in `ws.go` (three-way branch)
-
-```go
-// In wsHandler (main WebSocket):
-if h.router.HasOSProcess(sess.ID) {
-    h.router.WriteOSInput(sess.ID, req.Input)
-} else if ag := h.pool.GetAgentBySession(sess.ID); ag != nil {
-    ag.WriteStdin(req.Input)
-} else {
-    msgs <- req.Input  // treat as new command
-}
-```
+Build a new unified process management system from scratch in separate packages, running alongside the existing implementation. Existing code serves as reference for interfaces, edge cases, and integration points — not as a foundation to modify.
 
 ## Key Problems
 
@@ -65,7 +24,17 @@ if h.router.HasOSProcess(sess.ID) {
 
 ### Core idea
 
-All processes (agent calls, OS commands, REPLs, long-running TUI apps) are managed uniformly by a single Pool. A single WebSocket per session replaces the N+1 topology. The terminal on the client side always shows one process at a time, with plumbing that can be rewired between processes.
+All processes (agent calls, OS commands, REPLs, long-running TUI apps) are managed uniformly by a single process manager. A single WebSocket per session replaces the N+1 topology. The terminal on the client side always shows one process at a time, with plumbing that can be rewired between processes.
+
+### Relationship to existing code
+
+The existing implementation (`pool.Pool`, `Router.osProcesses`, `ws.go`, `stream.go`, `forward.go`) is left completely untouched. The new implementation lives in its own package tree (e.g., `internal/process/`, `internal/ws2/`) and is wired in behind a feature flag or separate HTTP route. Once the new system is feature-complete and stable, the old code paths are removed in a single cleanup pass — no incremental refactoring of existing code.
+
+Existing code that is useful as **reference**:
+- `pool/agent.go` — Process spawning, PTY setup, terminal resize API
+- `shell/commands.go` `cmdOs` — How OS commands are currently dispatched
+- `ws/ws.go` — WebSocket read/write loop patterns, message protocol
+- `router/router.go` — Command routing and session tracking
 
 ### Process execution modes
 
@@ -83,12 +52,12 @@ Every spawn request has two orthogonal axes: **plumbing** and **persistence**.
 
 The two axes combine freely:
 
-| Plumbing | Persistence | Disconnect behavior | Client reconnects |
-|---|---|---|---|
-| Sync | Normal | Killed | — (gone) |
-| Sync | Nohup | Continues, VT parser keeps screen current | `attach <pid>` to reattach |
-| Async | Normal | Killed | — (gone) |
-| Async | Nohup | Continues, VT parser keeps screen current | `attach <pid>` to reattach |
+| Plumbing | Persistence | Disconnect behavior                       | Client reconnects          |
+| -------- | ----------- | ----------------------------------------- | -------------------------- |
+| Sync     | Normal      | Killed                                    | — (gone)                   |
+| Sync     | Nohup       | Continues, VT parser keeps screen current | `attach <pid>` to reattach |
+| Async    | Normal      | Killed                                    | — (gone)                   |
+| Async    | Nohup       | Continues, VT parser keeps screen current | `attach <pid>` to reattach |
 
 ### Plumbing and focus
 
@@ -140,24 +109,24 @@ If a second browser instance connects while one is already active:
 
 This avoids silent session conflicts while keeping the backend stateless with respect to sessions.
 
-| Scenario | Behavior |
-|---|---|
-| Client disconnects, normal process (sync or async) | Process is killed (SIGTERM → SIGKILL after grace period) |
-| Client disconnects, nohup process (sync or async) | Process continues; VT parser keeps screen current; process shows in `ActiveList` |
-| Client reconnects (new connection after disconnect) | No automatic reattachment; user lists processes and `attach <pid>` to resume |
-| Second client connects while one is active | Prompt to kick existing session; on confirm, old WS is closed and new one takes over |
+| Scenario                                            | Behavior                                                                             |
+| --------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| Client disconnects, normal process (sync or async)  | Process is killed (SIGTERM → SIGKILL after grace period)                             |
+| Client disconnects, nohup process (sync or async)   | Process continues; VT parser keeps screen current; process shows in `ActiveList`     |
+| Client reconnects (new connection after disconnect) | No automatic reattachment; user lists processes and `attach <pid>` to resume         |
+| Second client connects while one is active          | Prompt to kick existing session; on confirm, old WS is closed and new one takes over |
 
-### What this simplifies
+### What the new design eliminates
 
 - **One WebSocket** — No `/ws/agent/<pid>` per-process connections. The client opens one WS and all I/O flows through it.
-- **No subscribe/broadcast** — The pub/sub mechanism existed only to feed the per-process WS. Without that endpoint, it disappears.
-- **No `Router.osProcesses`** — OS commands go through Pool like everything else, using the same spawn/monitor/terminate lifecycle.
+- **No subscribe/broadcast** — The pub/sub mechanism existed only to feed the per-process WS. The new design has no such mechanism.
+- **No `Router.osProcesses`** — OS commands go through the new ProcessManager like everything else, using the same spawn/monitor/terminate lifecycle.
 - **No three-way input routing** — Input goes to whichever process is currently plumbed to the terminal, or is treated as a command if no process is active.
 - **`Agent` renamed to `Process`** — The struct represents any child process, not just LLM agents.
 
-### Key concepts for the backend
+### Key concepts for the new backend
 
-- The Pool tracks which process (if any) is currently plumbed to each session's terminal.
+- The ProcessManager tracks which process (if any) is currently plumbed to each session's terminal.
 - Every process's PTY output is fed through a VT parser that maintains the current screen state (cell buffer + cursor + terminal modes). On `attach`, the screen state is serialized as escape sequences and sent to the client — no raw byte replay needed.
 - The `attach` command snapshots the VT parser's screen state to the client, then wires live I/O.
 - The `detach` control frame reverses this: live I/O is disconnected, the process continues running in the background (PTY output keeps feeding the VT parser), and the terminal returns to accepting commands.
@@ -198,26 +167,26 @@ For `detach`: the current process's output channel is discarded (process continu
 
 **Client → Server:**
 
-| Message | When | Effect |
-|---|---|---|
-| `{"input":"ls -la"}` | No process active | Treated as command, executed via router |
-| `{"input":"some text"}` | Process active (sync or looked) | Text written to process stdin |
-| `{"input":"\x0f"}` | Process active | `Ctrl+O` (0x0f) intercepted client-side, sends `{"detach":true}` instead |
-| `{"attach":123,"rows":24,"cols":80}` | Any time | Switch plumbing to process PID 123 with client's terminal size |
-| `{"resize":true,"rows":24,"cols":80}` | Process active | Forward to process's PTY |
-| `{"kick":true}` | Prompted when another session exists | Confirm kick, close old session |
+| Message                               | When                                 | Effect                                                                   |
+| ------------------------------------- | ------------------------------------ | ------------------------------------------------------------------------ |
+| `{"input":"ls -la"}`                  | No process active                    | Treated as command, executed via router                                  |
+| `{"input":"some text"}`               | Process active (sync or looked)      | Text written to process stdin                                            |
+| `{"input":"\x0f"}`                    | Process active                       | `Ctrl+O` (0x0f) intercepted client-side, sends `{"detach":true}` instead |
+| `{"attach":123,"rows":24,"cols":80}`  | Any time                             | Switch plumbing to process PID 123 with client's terminal size           |
+| `{"resize":true,"rows":24,"cols":80}` | Process active                       | Forward to process's PTY                                                 |
+| `{"kick":true}`                       | Prompted when another session exists | Confirm kick, close old session                                          |
 
 **Server → Client:**
 
-| Message | When | Effect |
-|---|---|---|
-| `{"type":"init","screen":"...","modes":{...},"process_id":N}` | After `attach` succeeds | Screen snapshot from VT parser — client renders this before live output |
-| `{"type":"ack","text":"..."}` | Command accepted or process spawned | Acknowledgement |
-| `{"type":"progress","text":"...","process_id":N}` | Process output (after init) | Content from the active process |
-| `{"type":"deliverable","text":"done","process_id":N}` | Process exited | Terminal returns to command mode |
-| `{"type":"error","text":"..."}` | Error | Display error in terminal |
-| `{"type":"prompt","action":"kick"}` | Second session connects | Ask user if they want to take over |
-| `{"type":"detached","process_id":N}` | Detach succeeded | Confirmation that process N is now backgrounded |
+| Message                                                       | When                                | Effect                                                                  |
+| ------------------------------------------------------------- | ----------------------------------- | ----------------------------------------------------------------------- |
+| `{"type":"init","screen":"...","modes":{...},"process_id":N}` | After `attach` succeeds             | Screen snapshot from VT parser — client renders this before live output |
+| `{"type":"ack","text":"..."}`                                 | Command accepted or process spawned | Acknowledgement                                                         |
+| `{"type":"progress","text":"...","process_id":N}`             | Process output (after init)         | Content from the active process                                         |
+| `{"type":"deliverable","text":"done","process_id":N}`         | Process exited                      | Terminal returns to command mode                                        |
+| `{"type":"error","text":"..."}`                               | Error                               | Display error in terminal                                               |
+| `{"type":"prompt","action":"kick"}`                           | Second session connects             | Ask user if they want to take over                                      |
+| `{"type":"detached","process_id":N}`                          | Detach succeeded                    | Confirmation that process N is now backgrounded                         |
 
 All `progress` events from processes carry a `process_id` so the client can correlate output even when plumbing switches.
 
@@ -253,14 +222,15 @@ The result: the client sees the snapshot first (correct content at old dimension
 
 When a sync process is detached (pushed to background), the VT parser continues to process the process's PTY output — the screen state stays current. On re-attach, the current screen is snapshot from the parser and sent fresh.
 
-### Process lifecycle in the Pool
+### Process lifecycle in the new ProcessManager
 
-The existing `spawn`/`monitor`/`terminate` flow in Pool changes minimally:
+The new `ProcessManager` (in `internal/process/`) implements `spawn`/`monitor`/`terminate`/`attach`/`detach` from scratch. The existing Pool's lifecycle logic is a reference for the basic goroutine-per-process pattern.
 
-- **spawn** — Accepts a plumbing parameter (sync/async). All processes now have their PTY output wired through a VT parser that maintains the screen model. For sync, the live channel is set; for async, no live channel until attach.
+- **spawn** — Accepts a plumbing parameter (sync/async). All processes have their PTY output wired through a VT parser that maintains the screen model. For sync, the live channel is set; for async, no live channel until attach.
 - **monitor** — The goroutine reads from the process and pushes bytes through the VT parser. If a live channel is set (process is attached), bytes are also forwarded to it. For nohup processes, `monitor` is not cancelled on WebSocket disconnect — it runs until the process exits.
-- **terminate** — Unchanged.
-- **attach promotion** — A live channel is installed on the process. The VT parser's current screen state is sent as an `init` frame before live output begins. Input is connected (`WriteStdinRaw`).
+- **terminate** — SIGTERM → SIGKILL after grace period.
+- **attach** — A live channel is installed on the process. The VT parser's current screen state is sent as an `init` frame before live output begins. Input is connected.
+- **detach** — Live channel is removed; process continues, VT parser keeps ingesting output.
 
 ### Detach flow in detail
 
@@ -278,6 +248,8 @@ The existing `spawn`/`monitor`/`terminate` flow in Pool changes minimally:
 
 ## Implementation Roadmap
 
+All phases build **new packages** alongside existing code. Existing files are never modified — they serve as reference for patterns, interfaces, and edge cases.
+
 ### Phase 1: VT parser (independent, lowest risk)
 
 Write `internal/vt/parser.go` — VT100/xterm parser that maintains a screen model:
@@ -290,35 +262,57 @@ Write `internal/vt/parser.go` — VT100/xterm parser that maintains a screen mod
 - Screen serialization: emit escape sequences to reproduce current screen state
 - Tests: feed known sequences, verify screen state and serialization
 
-### Phase 2: Wire parser + plumbing model
+**Reference**: existing PTY output handling in `pool/agent.go` monitor goroutine.
 
-- Feed all PTY output through VT parser in monitor goroutines
-- Add plumbing mode (sync/async) and persistence (normal/nohup) to spawn API
-- Add focused-process tracking to Pool (which process is plumbed to which session)
-- Add `ScreenSnapshot()` on Process (serialize VT parser state)
+### Phase 2: Process manager core
 
-### Phase 3: Move cmdOs into Pool
+Write `internal/process/manager.go` — the new unified process manager:
 
-- Remove `Router.osProcesses`, `WriteOSInput`, `ResizeOSProcess`
-- Route `os` commands through Pool via `SubmitWithMode`
-- Fold three-way input routing into one branch
-- Remove `forward.go`
+- Process struct (renamed from `Agent`) with spawn/monitor/terminate lifecycle
+- Plumbing mode (sync/async) and persistence (normal/nohup) in spawn API
+- PTY output fed through VT parser in monitor goroutines
+- Focused-process tracking (which process is plumbed to which session)
+- `ScreenSnapshot()` on Process (serialize VT parser state)
+- Queue with max concurrency (modeled on existing Pool's queue)
+- `ActiveList` for listing running processes
 
-### Phase 4: Single WS + attach/detach (highest risk)
+**Reference**: `pool/pool.go`, `pool/agent.go` for spawn/monitor/terminate patterns, queue, and tracking maps. `shell/commands.go` `cmdOs` for OS command dispatch patterns. `router/router.go` for session-process association.
 
-- Rewrite `ws.go` writer goroutine with `activeCh`/`ctrlCh` channel swapping
-- Implement `attach` server-side: init frame (screen snapshot) → resize → live I/O
-- Implement `detach` server-side: plumbing swap, VT parser keeps running
-- Client-side `Ctrl+O` interception → `{"detach":true}` control frame
-- Remove `wsAgentHandler`, `stream.go`, subscribe/broadcast, `/ws/agent/` route
+### Phase 3: New WebSocket handler
 
-### Phase 5: Session kick + frontend
+Write `internal/ws2/handler.go` — new WebSocket handler with the single-WS plumbing model:
 
-- Track active session, detect second WS, prompt to kick
-- Frontend: single-WS init, process list with `attach`, render `init` frames, Ctrl+O interception
+- Writer goroutine with `activeCh`/`ctrlCh` channel swapping
+- Attach: init frame (screen snapshot from VT parser) → resize → live I/O
+- Detach: plumbing swap, VT parser keeps running
+- Input routing: single branch (plumbed process gets stdin; no process → dispatch command)
+- No subscribe/broadcast, no per-process WS
+
+**Reference**: `ws/ws.go` for read/write loop structure and message types. `ws/stream.go` and `ws/agenthub.go` for the per-process WS patterns (being replaced).
+
+### Phase 4: Wire new handler (no old code removed yet)
+
+- Register new WS handler on a separate route (e.g., `/shell2`)
+- New frontend client connects to `/shell2` while old client continues using `/shell`
+- Both implementations run side-by-side for testing and comparison
+- Frontend: single-WS init, process list with `attach`, render `init` frames, `Ctrl+O` interception
+
+**No existing code is removed or modified in this phase.**
+
+### Phase 5: Cutover (single cleanup pass)
+
+Once the new implementation is feature-complete and stable:
+
+- Remove old WS handler, `wsAgentHandler`, `stream.go`, subscribe/broadcast, `/ws/agent/` route
+- Remove `Router.osProcesses`, `WriteOSInput`, `ResizeOSProcess`, `forward.go`
+- Remove old Pool's `cmdOs` path (now handled by new ProcessManager)
+- Rename `/shell2` → `/shell`
+- Delete old `pool/`, `ws/`, and related dead code
 
 ### Critical path
 
 ```
 Phase 1 → Phase 2 → Phase 3 → Phase 4 → Phase 5
+
+Each phase is independently testable alongside existing code.
 ```
